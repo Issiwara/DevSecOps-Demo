@@ -1,0 +1,84 @@
+name: Build, Security Scan and Deploy
+
+on:
+  push:
+    branches: ['main']
+
+jobs:
+
+  # ── SAST — Static Analysis ───────────────────────────────────────
+  sast:
+    name: SAST Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # ── 1. Scan for secrets in code ───────────────────────────────
+      - name: Scan for secrets (Gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 2. Scan dependencies for vulnerabilities ──────────────────
+      - name: Dependency vulnerability scan (npm audit)
+        run: |
+          cd frontend
+          npm audit --audit-level=high
+        continue-on-error: true
+
+      # ── 3. Scan code for security issues (Semgrep) ────────────────
+      - name: Code security scan (Semgrep)
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: >-
+            p/javascript
+            p/owasp-top-ten
+            p/secrets
+        continue-on-error: true
+
+      # ── 4. Scan Dockerfile for misconfigs (Hadolint) ──────────────
+      - name: Dockerfile lint (Hadolint)
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: Dockerfile
+
+  # ── BUILD ─────────────────────────────────────────────────────────
+  build:
+    name: Build and Push Image
+    runs-on: ubuntu-latest
+    needs: sast
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/crud-frontend:latest
+            ${{ secrets.DOCKER_USERNAME }}/crud-frontend:${{ github.sha }}
+          provenance: false
+          no-cache: true
+
+      # ── 5. Scan Docker image for vulnerabilities (Trivy) ──────────
+      - name: Container image scan (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ secrets.DOCKER_USERNAME }}/crud-frontend:latest
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: 0
