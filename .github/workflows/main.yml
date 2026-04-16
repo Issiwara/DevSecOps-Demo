@@ -82,3 +82,52 @@ jobs:
           format: table
           severity: HIGH,CRITICAL
           exit-code: 0
+
+  # ── Deploy ───────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy frontend
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_PRIVATE_KEY }}
+          port: 22
+          script: |
+            docker pull ${{ secrets.DOCKER_USERNAME }}/crud-frontend:latest
+            docker stop frontend || true
+            docker rm   frontend || true
+            docker run -d \
+              --name frontend \
+              --restart unless-stopped \
+              -p 80:80 \
+              -e BACKEND_HOST=${{ secrets.BACKEND_HOST }} \
+              ${{ secrets.DOCKER_USERNAME }}/crud-frontend:latest
+            sleep 5
+            docker ps | grep frontend
+            curl -f http://localhost:80 || exit 1
+
+  # ── DAST ─────────────────────────────────────────────────────────
+  dast:
+    name: DAST Security Scan
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: OWASP ZAP scan
+        uses: zaproxy/action-baseline@v0.10.0
+        with:
+          target: http://${{ secrets.EC2_HOST }}
+          cmd_options: '-a'
+        continue-on-error: true
+
+      - name: Upload ZAP report
+        uses: actions/upload-artifact@v3
+        with:
+          name: zap-security-report
+          path: report_html.html
