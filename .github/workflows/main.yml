@@ -97,17 +97,17 @@ jobs:
           key: ${{ secrets.EC2_PRIVATE_KEY }}
           port: 22
           script: |
-            docker pull ${{ secrets.DOCKER_USERNAME }}/crud-frontend:latest
-            docker stop frontend || true
-            docker rm   frontend || true
-            docker run -d \
+            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/crud-frontend:latest
+            sudo docker stop frontend || true
+            sudo docker rm   frontend || true
+            sudo docker run -d \
               --name frontend \
               --restart unless-stopped \
               -p 80:80 \
               -e BACKEND_HOST=${{ secrets.BACKEND_HOST }} \
               ${{ secrets.DOCKER_USERNAME }}/crud-frontend:latest
             sleep 5
-            docker ps | grep frontend
+            sudo docker ps | grep frontend
             curl -f http://localhost:80 || exit 1
 
   # ── DAST ─────────────────────────────────────────────────────────
