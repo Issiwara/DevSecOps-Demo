@@ -23,7 +23,6 @@ jobs:
       #  2. Scan dependencies for vulnerabilities 
       - name: Dependency vulnerability scan (npm audit)
         run: |
-          cd frontend
           npm audit --audit-level=high
         continue-on-error: true
 
